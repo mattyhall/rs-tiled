@@ -624,13 +624,38 @@ impl Image {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct TilesContainer {
+    pub data: Vec<u32>,
+    pub tiles_per_row: u32,
+    pub number_of_rows: u32,
+}
+
+impl From<&TilesContainer> for Vec<Vec<u32>> {
+    fn from(item: &TilesContainer) -> Self {
+        let mut data: Vec<Vec<u32>> = Vec::new();
+        let tiles_per_row = item.tiles_per_row as usize;
+        let number_of_rows = item.number_of_rows as usize;
+        for x in 0..number_of_rows {
+            let start_index = x * tiles_per_row;
+            let end_index = start_index + tiles_per_row;
+            let row: Vec<u32> = (&item.data[start_index..end_index])
+                .iter()
+                .cloned()
+                .collect();
+            data.push(row);
+        }
+        data
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Layer {
     pub name: String,
     pub opacity: f32,
     pub visible: bool,
     /// The tiles are arranged in rows. Each tile is a number which can be used
     ///  to find which tileset it belongs to and can then be rendered.
-    pub tiles: Vec<Vec<u32>>,
+    pub tiles: TilesContainer,
     pub properties: Properties,
     pub layer_index: u32,
 }
@@ -653,7 +678,11 @@ impl Layer {
             ],
             TiledError::MalformedAttributes("layer must have a name".to_string())
         );
-        let mut tiles = Vec::new();
+        let mut tiles = TilesContainer {
+            data: Vec::new(),
+            tiles_per_row: 0,
+            number_of_rows: 0,
+        };
         let mut properties = HashMap::new();
         parse_tag!(parser, "layer", {
             "data" => |attrs| {
@@ -971,7 +1000,7 @@ fn parse_data<R: Read>(
     parser: &mut EventReader<R>,
     attrs: Vec<OwnedAttribute>,
     width: u32,
-) -> Result<Vec<Vec<u32>>, TiledError> {
+) -> Result<TilesContainer, TiledError> {
     let ((e, c), ()) = get_attrs!(
         attrs,
         optionals: [
@@ -990,7 +1019,7 @@ fn parse_data<R: Read>(
         }
         (Some(e), None) => match e.as_ref() {
             "base64" => return parse_base64(parser).map(|v| convert_to_u32(&v, width)),
-            "csv" => return decode_csv(parser),
+            "csv" => return decode_csv(parser, width),
             e => return Err(TiledError::Other(format!("Unknown encoding format {}", e))),
         },
         (Some(e), Some(c)) => match (e.as_ref(), c.as_ref()) {
@@ -1054,27 +1083,34 @@ fn decode_gzip(data: Vec<u8>) -> Result<Vec<u8>, TiledError> {
     Ok(data)
 }
 
-fn decode_csv<R: Read>(parser: &mut EventReader<R>) -> Result<Vec<Vec<u32>>, TiledError> {
+fn decode_csv<R: Read>(
+    parser: &mut EventReader<R>,
+    width: u32,
+) -> Result<TilesContainer, TiledError> {
     loop {
         match try!(parser.next().map_err(TiledError::XmlDecodingError)) {
             XmlEvent::Characters(s) => {
-                let mut rows: Vec<Vec<u32>> = Vec::new();
-                for row in s.split('\n') {
-                    if row.trim() == "" {
-                        continue;
-                    }
-                    rows.push(
-                        row.split(',')
-                            .filter(|v| v.trim() != "")
-                            .map(|v| v.replace('\r', "").parse().unwrap())
-                            .collect(),
-                    );
-                }
-                return Ok(rows);
+                let data: Vec<u32> = s
+                    .replace('\r', "")
+                    .replace('\n', "")
+                    .split(",")
+                    .map(|v| v.parse().unwrap())
+                    .collect();
+                let number_of_rows = data.len() as u32 / width;
+                let tiles = TilesContainer {
+                    data,
+                    tiles_per_row: width,
+                    number_of_rows,
+                };
+                return Ok(tiles);
             }
             XmlEvent::EndElement { name, .. } => {
                 if name.local_name == "data" {
-                    return Ok(Vec::new());
+                    return Ok(TilesContainer {
+                        data: Vec::new(),
+                        tiles_per_row: 0,
+                        number_of_rows: 0,
+                    });
                 }
             }
             _ => {}
@@ -1082,21 +1118,24 @@ fn decode_csv<R: Read>(parser: &mut EventReader<R>) -> Result<Vec<Vec<u32>>, Til
     }
 }
 
-fn convert_to_u32(all: &Vec<u8>, width: u32) -> Vec<Vec<u32>> {
+fn convert_to_u32(all: &Vec<u8>, width: u32) -> TilesContainer {
     let mut data = Vec::new();
     for chunk in all.chunks((width * 4) as usize) {
-        let mut row = Vec::new();
         for i in 0..width {
             let start: usize = i as usize * 4;
             let n = ((chunk[start + 3] as u32) << 24)
                 + ((chunk[start + 2] as u32) << 16)
                 + ((chunk[start + 1] as u32) << 8)
                 + chunk[start] as u32;
-            row.push(n);
+            data.push(n);
         }
-        data.push(row);
     }
-    data
+    let number_of_rows = data.len() as u32 / width;
+    TilesContainer {
+        data,
+        tiles_per_row: width,
+        number_of_rows,
+    }
 }
 
 fn parse_impl<R: Read>(reader: R, map_path: Option<&Path>) -> Result<Map, TiledError> {
