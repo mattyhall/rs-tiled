@@ -18,20 +18,13 @@ to the dependencies section of your Cargo.toml.
 ### Example
 
 ```rust
-extern crate serialize;
-extern crate tiled;
-
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
-
-use tiled::parse;
 
 fn main() {
-    let file = File::open(&Path::new("assets/tiled_base64_zlib.tmx")).unwrap();
-    println!("Opened file");
+    let file = File::open("assets/tiled_base64_zlib.tmx").unwrap();
     let reader = BufReader::new(file);
-    let map = parse(reader).unwrap();
+    let map = tiled::parse(reader).unwrap();
     println!("{:?}", map);
     println!("{:?}", map.get_tileset_by_gid(22));
 }

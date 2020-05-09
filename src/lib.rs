@@ -1166,14 +1166,15 @@ fn parse_impl<R: Read>(reader: R, map_path: Option<&Path>) -> Result<Map, TiledE
 /// parse it. This augments `parse` with a file location: some engines
 /// (e.g. Amethyst) simply hand over a byte stream (and file location) for parsing,
 /// in which case this function may be required.
-pub fn parse_with_path<R: Read>(reader: R, path: &Path) -> Result<Map, TiledError> {
-    parse_impl(reader, Some(path))
+pub fn parse_with_path<R: Read>(reader: R, path: impl AsRef<Path>) -> Result<Map, TiledError> {
+    parse_impl(reader, Some(path.as_ref()))
 }
 
 /// Parse a file hopefully containing a Tiled map and try to parse it.  If the
 /// file has an external tileset, the tileset file will be loaded using a path
 /// relative to the map file's path.
-pub fn parse_file(path: &Path) -> Result<Map, TiledError> {
+pub fn parse_file(path: impl AsRef<Path>) -> Result<Map, TiledError> {
+    let path = path.as_ref();
     let file = File::open(path)
         .map_err(|_| TiledError::Other(format!("Map file not found: {:?}", path)))?;
     parse_impl(file, Some(path))
