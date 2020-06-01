@@ -3,7 +3,7 @@ use base64;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-use std::io::{BufReader, Error, Read};
+use std::io::{BufReader, Error, Read, Write};
 use std::path::Path;
 use std::str::FromStr;
 use xml::attribute::OwnedAttribute;
@@ -112,6 +112,7 @@ pub enum TiledError {
     DecompressingError(Error),
     Base64DecodingError(base64::DecodeError),
     XmlDecodingError(XmlError),
+    XmlEncodingError(xml::writer::Error),
     PrematureEnd(String),
     Other(String),
 }
@@ -123,9 +124,16 @@ impl fmt::Display for TiledError {
             TiledError::DecompressingError(ref e) => write!(fmt, "{}", e),
             TiledError::Base64DecodingError(ref e) => write!(fmt, "{}", e),
             TiledError::XmlDecodingError(ref e) => write!(fmt, "{}", e),
+            TiledError::XmlEncodingError(ref e) => write!(fmt, "{}", e),
             TiledError::PrematureEnd(ref e) => write!(fmt, "{}", e),
             TiledError::Other(ref s) => write!(fmt, "{}", s),
         }
+    }
+}
+
+impl From<xml::writer::Error> for TiledError {
+    fn from(err: xml::writer::Error) -> TiledError {
+        TiledError::XmlEncodingError(err)
     }
 }
 
@@ -137,6 +145,7 @@ impl std::error::Error for TiledError {
             TiledError::DecompressingError(ref e) => e.description(),
             TiledError::Base64DecodingError(ref e) => e.description(),
             TiledError::XmlDecodingError(ref e) => e.description(),
+            TiledError::XmlEncodingError(ref e) => e.description(),
             TiledError::PrematureEnd(ref s) => s.as_ref(),
             TiledError::Other(ref s) => s.as_ref(),
         }
@@ -147,6 +156,7 @@ impl std::error::Error for TiledError {
             TiledError::DecompressingError(ref e) => Some(e as &dyn std::error::Error),
             TiledError::Base64DecodingError(ref e) => Some(e as &dyn std::error::Error),
             TiledError::XmlDecodingError(ref e) => Some(e as &dyn std::error::Error),
+            TiledError::XmlEncodingError(ref e) => Some(e as &dyn std::error::Error),
             TiledError::PrematureEnd(_) => None,
             TiledError::Other(_) => None,
         }
@@ -307,6 +317,53 @@ impl Map {
         })
     }
 
+    // TODO: Add missing fields, split into smaller functions.
+    pub fn to_writer<W: Write>(&self, writer: W) -> Result<(), TiledError> {
+        use xml::common::XmlVersion;
+        use xml::writer::{EventWriter, XmlEvent};
+
+        let mut w = EventWriter::new(writer);
+        w.write(XmlEvent::StartDocument {
+            version: XmlVersion::Version10,
+            encoding: None,
+            standalone: None,
+        })?;
+        w.write(
+            XmlEvent::start_element("map")
+                .attr("version", "1.2")
+                .attr("orientation", &self.orientation.to_string())
+                .attr("width", &self.width.to_string())
+                .attr("height", &self.height.to_string())
+                .attr("tilewidth", &self.tile_width.to_string())
+                .attr("tileheight", &self.tile_height.to_string()),
+        )?;
+        {
+            for layer in &self.layers {
+                w.write(
+                    XmlEvent::start_element("layer")
+                        .attr("id", &layer.layer_index.to_string())
+                        .attr("name", &layer.name)
+                        .attr("width", &layer.tiles[0].len().to_string())
+                        .attr("height", &layer.tiles.len().to_string()),
+                )?;
+                {
+                    w.write(XmlEvent::start_element("data").attr("encoding", "csv"))?;
+                    for row in &layer.tiles {
+                        for column in row {
+                            w.write(format!("{},", column.gid).as_str())?;
+                        }
+                        w.write("\n")?;
+                    }
+
+                    w.write(XmlEvent::end_element())?;
+                }
+                w.write(XmlEvent::end_element())?;
+            }
+        }
+        w.write(XmlEvent::end_element())?;
+        Ok(())
+    }
+
     /// This function will return the correct Tileset given a GID.
     pub fn get_tileset_by_gid(&self, gid: u32) -> Option<&Tileset> {
         let mut maximum_gid: i32 = -1;
@@ -318,6 +375,36 @@ impl Map {
             }
         }
         maximum_ts
+    }
+}
+
+/// Default map should be similar to a map which one can get by saving
+/// new empty map from a new installation of tiled.
+impl Default for Map {
+    fn default() -> Self {
+        const WIDTH: usize = 16;
+        const HEIGHT: usize = 16;
+        Self {
+            version: "1.2".into(),
+            orientation: Orientation::Orthogonal,
+            width: WIDTH as u32,
+            height: HEIGHT as u32,
+            tile_width: 32,
+            tile_height: 32,
+            tilesets: vec![],
+            layers: vec![Layer {
+                name: "Tile Layer 1".into(),
+                opacity: 1.0,
+                visible: true,
+                tiles: vec![vec![LayerTile::default(); WIDTH]; HEIGHT],
+                properties: HashMap::new(),
+                layer_index: 0,
+            }],
+            image_layers: vec![],
+            object_groups: vec![],
+            properties: HashMap::new(),
+            background_colour: None,
+        }
     }
 }
 
@@ -340,6 +427,21 @@ impl FromStr for Orientation {
             "hexagonal" => Ok(Orientation::Hexagonal),
             _ => Err(ParseTileError::OrientationError),
         }
+    }
+}
+
+impl fmt::Display for Orientation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Orientation::Orthogonal => "orthogonal",
+                Orientation::Isometric => "isometric",
+                Orientation::Staggered => "staggered",
+                Orientation::Hexagonal => "hexagonal",
+            }
+        )
     }
 }
 
@@ -628,7 +730,7 @@ impl Image {
 
 /// Stores the proper tile gid, along with how it is flipped.
 // Maybe PartialEq and Eq should be custom, so that it ignores tile-flipping?
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct LayerTile {
     pub gid: u32,
     pub flip_h: bool,

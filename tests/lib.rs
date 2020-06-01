@@ -124,3 +124,19 @@ fn test_flipped_gid() {
     assert!(!t4.flip_h);
     assert!(!t4.flip_v);
 }
+
+/// Assert that `map = read(write(map))`
+#[test]
+fn test_serde() {
+    let map = Map::default();
+    let mut buf = vec![];
+    map.to_writer(&mut buf).unwrap();
+
+    // `untitled` is a map which one can get by saving new empty map from a
+    // new installation of tiled.
+    let untitled = read_from_file(&Path::new("assets/untitled.tmx")).unwrap();
+    assert_eq!(untitled, map);
+
+    let default = parse(buf.as_slice()).unwrap();
+    assert_eq!(untitled, default);
+}
