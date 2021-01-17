@@ -345,9 +345,11 @@ pub struct Tileset {
     pub spacing: u32,
     pub margin: u32,
     pub tilecount: Option<u32>,
+    pub columns: Option<u32>,
     /// The Tiled spec says that a tileset can have mutliple images so a `Vec`
     /// is used. Usually you will only use one.
     pub images: Vec<Image>,
+    pub terrain_types: Option<TerrainTypes>,
     pub tiles: Vec<Tile>,
     pub properties: Properties,
 }
@@ -365,12 +367,13 @@ impl Tileset {
         parser: &mut EventReader<R>,
         attrs: &Vec<OwnedAttribute>,
     ) -> Result<Tileset, TiledError> {
-        let ((spacing, margin, tilecount), (first_gid, name, width, height)) = get_attrs!(
+        let ((spacing, margin, tilecount, columns), (first_gid, name, width, height)) = get_attrs!(
            attrs,
            optionals: [
                 ("spacing", spacing, |v:String| v.parse().ok()),
                 ("margin", margin, |v:String| v.parse().ok()),
                 ("tilecount", tilecount, |v:String| v.parse().ok()),
+                ("columns", columns, |v:String| v.parse().ok()),
             ],
            required: [
                 ("firstgid", first_gid, |v:String| v.parse().ok()),
@@ -382,11 +385,16 @@ impl Tileset {
         );
 
         let mut images = Vec::new();
+        let mut terrain_types = None;
         let mut tiles = Vec::new();
         let mut properties = HashMap::new();
         parse_tag!(parser, "tileset", {
             "image" => |attrs| {
                 images.push(Image::new(parser, attrs)?);
+                Ok(())
+            },
+            "terraintypes" => |attrs| {
+                terrain_types = Some(TerrainTypes::new(parser, attrs)?);
                 Ok(())
             },
             "properties" => |_| {
@@ -407,7 +415,9 @@ impl Tileset {
             first_gid,
             name,
             tilecount,
+            columns,
             images,
+            terrain_types,
             tiles,
             properties,
         })
@@ -470,12 +480,13 @@ impl Tileset {
         parser: &mut EventReader<R>,
         attrs: &Vec<OwnedAttribute>,
     ) -> Result<Tileset, TiledError> {
-        let ((spacing, margin, tilecount), (name, width, height)) = get_attrs!(
+        let ((spacing, margin, tilecount, columns), (name, width, height)) = get_attrs!(
             attrs,
             optionals: [
                 ("spacing", spacing, |v:String| v.parse().ok()),
                 ("margin", margin, |v:String| v.parse().ok()),
                 ("tilecount", tilecount, |v:String| v.parse().ok()),
+                ("columns", columns, |v:String| v.parse().ok()),
             ],
             required: [
                 ("name", name, |v| Some(v)),
@@ -486,11 +497,16 @@ impl Tileset {
         );
 
         let mut images = Vec::new();
+        let mut terrain_types = None;
         let mut tiles = Vec::new();
         let mut properties = HashMap::new();
         parse_tag!(parser, "tileset", {
             "image" => |attrs| {
                 images.push(Image::new(parser, attrs)?);
+                Ok(())
+            },
+            "terraintypes" => |attrs| {
+                terrain_types = Some(TerrainTypes::new(parser, attrs)?);
                 Ok(())
             },
             "tile" => |attrs| {
@@ -504,16 +520,115 @@ impl Tileset {
         });
 
         Ok(Tileset {
-            first_gid: first_gid,
-            name: name,
+            first_gid,
+            name,
             tile_width: width,
             tile_height: height,
             spacing: spacing.unwrap_or(0),
             margin: margin.unwrap_or(0),
-            tilecount: tilecount,
-            images: images,
-            tiles: tiles,
+            tilecount,
+            columns,
+            images,
+            terrain_types,
+            tiles,
             properties,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Image {
+    /// The filepath of the image
+    pub source: String,
+    pub width: i32,
+    pub height: i32,
+    pub transparent_colour: Option<Colour>,
+}
+
+impl Image {
+    fn new<R: Read>(
+        parser: &mut EventReader<R>,
+        attrs: Vec<OwnedAttribute>,
+    ) -> Result<Image, TiledError> {
+        let (c, (s, w, h)) = get_attrs!(
+            attrs,
+            optionals: [
+                ("trans", trans, |v:String| v.parse().ok()),
+            ],
+            required: [
+                ("source", source, |v| Some(v)),
+                ("width", width, |v:String| v.parse().ok()),
+                ("height", height, |v:String| v.parse().ok()),
+            ],
+            TiledError::MalformedAttributes("image must have a source, width and
+height with correct types".to_string())
+        );
+
+        parse_tag!(parser, "image", { "" => |_| Ok(()) });
+        Ok(Image {
+            source: s,
+            width: w,
+            height: h,
+            transparent_colour: c,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Terrain {
+    pub name: String,
+    pub tile: u32,
+    pub properties: Properties,
+}
+
+impl Terrain {
+    fn new<R: Read>(
+        parser: &mut EventReader<R>,
+        attrs: Vec<OwnedAttribute>,
+    ) -> Result<Terrain, TiledError> {
+        let (_, (n, t)) = get_attrs!(
+            attrs,
+            optionals: [],
+            required: [
+                ("name", n, |v:String| v.parse().ok()),
+                ("tile", t, |v:String| v.parse::<u32>().ok()),
+            ],
+            TiledError::MalformedAttributes("terrain must have a name and a tile".to_string())
+        );
+        let mut p = HashMap::new();
+        parse_tag!(parser, "terrain", {
+            "properties" => |_| {
+                p = parse_properties(parser)?;
+                Ok(())
+            },
+        });
+        Ok(Terrain {
+            name: n,
+            tile: t,
+            properties: p,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct TerrainTypes {
+    pub terrains: Vec<Terrain>,
+}
+
+impl TerrainTypes {
+    fn new<R: Read>(
+        parser: &mut EventReader<R>,
+        attrs: Vec<OwnedAttribute>,
+    ) -> Result<TerrainTypes, TiledError> {
+        let mut terrains = Vec::new();
+        parse_tag!(parser, "terraintypes", {
+            "terrain" => |attrs| {
+                terrains.push(Terrain::new(parser, attrs)?);
+                Ok(())
+            },
+        });
+        Ok(TerrainTypes {
+            terrains,
         })
     }
 }
@@ -527,6 +642,7 @@ pub struct Tile {
     pub animation: Option<Vec<Frame>>,
     pub tile_type: Option<String>,
     pub probability: f32,
+    pub terrain: Vec<usize>,
 }
 
 impl Tile {
@@ -534,11 +650,13 @@ impl Tile {
         parser: &mut EventReader<R>,
         attrs: Vec<OwnedAttribute>,
     ) -> Result<Tile, TiledError> {
-        let ((tile_type, probability), id) = get_attrs!(
+        let ((tile_type, probability, terrain), id) = get_attrs!(
             attrs,
             optionals: [
                 ("type", tile_type, |v:String| v.parse().ok()),
                 ("probability", probability, |v:String| v.parse().ok()),
+                ("terrain", terrain, |v:String| v.split(',').map(|s| {
+                    s.parse::<usize>().ok()}).collect()),
             ],
             required: [
                 ("id", id, |v:String| v.parse::<u32>().ok()),
@@ -576,43 +694,7 @@ impl Tile {
             animation,
             tile_type,
             probability: probability.unwrap_or(1.0),
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Image {
-    /// The filepath of the image
-    pub source: String,
-    pub width: i32,
-    pub height: i32,
-    pub transparent_colour: Option<Colour>,
-}
-
-impl Image {
-    fn new<R: Read>(
-        parser: &mut EventReader<R>,
-        attrs: Vec<OwnedAttribute>,
-    ) -> Result<Image, TiledError> {
-        let (c, (s, w, h)) = get_attrs!(
-            attrs,
-            optionals: [
-                ("trans", trans, |v:String| v.parse().ok()),
-            ],
-            required: [
-                ("source", source, |v| Some(v)),
-                ("width", width, |v:String| v.parse().ok()),
-                ("height", height, |v:String| v.parse().ok()),
-            ],
-            TiledError::MalformedAttributes("image must have a source, width and height with correct types".to_string())
-        );
-
-        parse_tag!(parser, "image", { "" => |_| Ok(()) });
-        Ok(Image {
-            source: s,
-            width: w,
-            height: h,
-            transparent_colour: c,
+            terrain: terrain.unwrap_or(Vec::new()),
         })
     }
 }
@@ -708,6 +790,7 @@ impl Layer {
         })
     }
 }
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum LayerData {
     Finite(Vec<Vec<LayerTile>>),
@@ -727,7 +810,7 @@ pub struct Chunk {
 impl Chunk {
     pub(crate) fn new<R: Read>(
         parser: &mut EventReader<R>,
-        attrs: Vec<OwnedAttribute>,    
+        attrs: Vec<OwnedAttribute>,
         encoding: Option<String>,
         compression: Option<String>,
     ) -> Result<Chunk, TiledError> {
@@ -743,10 +826,10 @@ impl Chunk {
             TiledError::MalformedAttributes("layer must have a name".to_string())
         );
 
-       
+
 
         let tiles = parse_data_line(encoding, compression, parser, width)?;
-        
+
         Ok(Chunk {
                 x,
                 y,
@@ -1075,12 +1158,12 @@ fn parse_infinite_data<R: Read>(
         required: [],
         TiledError::MalformedAttributes("data must have an encoding and a compression".to_string())
     );
-    
+
     let mut chunks = HashMap::<(i32, i32), Chunk>::new();
     parse_tag!(parser, "data", {
         "chunk" => |attrs| {
-            let chunk = Chunk::new(parser, attrs, e.clone(), c.clone())?;            
-            chunks.insert((chunk.x, chunk.y), chunk);            
+            let chunk = Chunk::new(parser, attrs, e.clone(), c.clone())?;
+            chunks.insert((chunk.x, chunk.y), chunk);
             Ok(())
         }
     });
