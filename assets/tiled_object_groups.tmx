@@ -14,11 +14,9 @@
 0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
- <group id="2" name="group">
   <objectgroup id="3" name="sub_layer">
    <properties>
     <property name="an object group property" type="bool" value="true"/>
    </properties>
   </objectgroup>
- </group>
 </map>

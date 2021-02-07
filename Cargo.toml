@@ -22,6 +22,7 @@ path = "examples/main.rs"
 
 [dependencies]
 base64  = "0.10"
+downcast-rs = "1.0.3"
 xml-rs  = "0.8"
 libflate = "0.1.18"
 zstd = "0.5"

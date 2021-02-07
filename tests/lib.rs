@@ -1,6 +1,9 @@
 use std::fs::File;
 use std::path::Path;
-use tiled::{parse, parse_file, parse_tileset, Map, PropertyValue, TiledError, LayerData};
+use tiled::{
+    parse, parse_file, parse_tileset, Group, Layer, LayerData, Map, ObjectGroup, PropertyValue,
+    TiledError,
+};
 
 fn read_from_file(p: &Path) -> Result<Map, TiledError> {
     let file = File::open(p).unwrap();
@@ -38,7 +41,7 @@ fn test_just_tileset() {
 
 #[test]
 fn test_infinite_tileset() {
-    let r = read_from_file_with_path(&Path::new("assets/tiled_base64_zlib_infinite.tmx")).unwrap();    
+    let r = read_from_file_with_path(&Path::new("assets/tiled_base64_zlib_infinite.tmx")).unwrap();
 
     if let LayerData::Infinite(chunks) = &r.layers[0].tiles {
         assert_eq!(chunks.len(), 4);
@@ -50,7 +53,6 @@ fn test_infinite_tileset() {
         assert_eq!(chunks[&(-32, 32)].height, 32);
     } else {
         assert!(false, "It is wrongly recognized as a finite map");
-
     }
 }
 
@@ -94,6 +96,27 @@ fn test_tile_property() {
 }
 
 #[test]
+fn test_nested_groups() {
+    let r = read_from_file(&Path::new("assets/tiled_group_csv.tmx")).unwrap();
+    assert_eq!(r.layers.len(), 1);
+    let group = r.groups.get(0).unwrap();
+    assert_eq!(group.children.len(), 3);
+
+    let second_group = group.children.get(0).unwrap().downcast_ref::<Group>();
+    assert!(second_group.is_some());
+    let second_group = second_group.unwrap();
+    assert_eq!(second_group.children.len(), 1);
+    assert_eq!(second_group.offset_x, 20.0);
+    assert_eq!(second_group.offset_y, 22.0);
+
+    let object_layer = group.children.get(1).unwrap().downcast_ref::<ObjectGroup>();
+    assert!(object_layer.is_some());
+
+    let tile_layer = group.children.get(2).unwrap().downcast_ref::<Layer>();
+    assert!(tile_layer.is_some());
+}
+
+#[test]
 fn test_object_group_property() {
     let r = read_from_file(&Path::new("assets/tiled_object_groups.tmx")).unwrap();
     let prop_value: bool = if let Some(&PropertyValue::BoolValue(ref v)) = r.object_groups[0]
@@ -122,7 +145,7 @@ fn test_tileset_property() {
 #[test]
 fn test_flipped_gid() {
     let r = read_from_file_with_path(&Path::new("assets/tiled_flipped.tmx")).unwrap();
-    
+
     if let LayerData::Finite(tiles) = &r.layers[0].tiles {
         let t1 = tiles[0][0];
         let t2 = tiles[0][1];
@@ -146,5 +169,4 @@ fn test_flipped_gid() {
     } else {
         assert!(false, "It is wrongly recognized as an infinite map");
     }
-    
 }

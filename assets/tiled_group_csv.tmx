@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.2" tiledversion="1.2.2" orientation="orthogonal" renderorder="right-down" width="10" height="10" tilewidth="32" tileheight="32" infinite="0" nextlayerid="8" nextobjectid="3">
+ <tileset firstgid="1" name="tilesheet" tilewidth="32" tileheight="32" tilecount="84" columns="14">
+  <image source="tilesheet.png" width="448" height="192"/>
+ </tileset>
+ <layer id="1" name="Tile Layer 1" width="10" height="10">
+  <data encoding="csv">
+43,43,43,43,43,43,43,43,43,43,
+17,6,7,7,7,7,7,7,8,17,
+17,20,21,21,21,21,21,21,22,17,
+17,20,21,21,21,21,21,21,22,17,
+17,20,21,21,21,21,21,21,22,17,
+17,20,21,21,21,21,21,21,22,17,
+17,20,21,21,21,21,21,21,22,17,
+17,20,21,21,21,21,21,21,22,17,
+17,34,35,35,35,35,35,35,36,17,
+29,29,29,29,29,29,29,29,29,29
+</data>
+ </layer>
+ <group id="2" name="group">
+  <group id="6" name="offsetgroup" offsetx="20" offsety="22">
+   <objectgroup id="7" name="objects2">
+    <object id="1" x="106" y="102" width="45" height="33"/>
+   </objectgroup>
+  </group>
+  <objectgroup id="4" name="objects">
+   <object id="2" x="41" y="49" width="45" height="42"/>
+  </objectgroup>
+  <layer id="5" name="Tile Layer 2" width="10" height="10">
+   <data encoding="csv">
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0
+</data>
+  </layer>
+ </group>
+</map>
