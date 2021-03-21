@@ -148,3 +148,27 @@ fn test_flipped_gid() {
     }
     
 }
+
+#[test]
+fn test_object_template_property() {
+    let r = read_from_file_with_path(&Path::new("assets/tiled_object_template.tmx")).unwrap();
+    let object = &r.object_groups[0].objects[0]; // The templated object
+    let object_nt = &r.object_groups[0].objects[1]; // The non-templated object
+
+    assert_eq!(object_nt.template, None);
+
+    let template_object = object.template.as_ref().unwrap().object.as_ref().unwrap();
+    assert_eq!(template_object.gid, 45);
+    assert_eq!(template_object.width, 32.0);
+    assert_eq!(template_object.height, 32.0);
+    assert_eq!(
+        template_object.properties.get("property").unwrap().clone(),
+        PropertyValue::IntValue(1)
+    );
+
+    let tileset = object.template.as_ref().unwrap().tileset.as_ref().unwrap();
+    assert_eq!(
+        tileset.properties.get("tileset property").unwrap().clone(),
+        PropertyValue::StringValue("tsp".to_string())
+    );
+}

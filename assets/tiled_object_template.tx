@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+ <tileset firstgid="1" source="tilesheet.tsx"/>
+ <object gid="45" width="32" height="32">
+  <properties>
+   <property name="property" type="int" value="1"/>
+  </properties>
+ </object>
+</template>

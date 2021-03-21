@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.4" tiledversion="1.4.2" orientation="orthogonal" renderorder="right-down" width="3" height="3" tilewidth="32" tileheight="32" infinite="0" nextlayerid="3" nextobjectid="3">
+ <tileset firstgid="1" source="tilesheet.tsx"/>
+ <layer id="1" name="Tile Layer 1" width="3" height="3">
+  <data encoding="csv">
+6,7,8,
+20,21,22,
+34,35,36
+</data>
+ </layer>
+ <objectgroup id="2" name="Object Layer 1">
+  <object id="1" template="tiled_object_template.tx" x="32" y="32">
+   <properties>
+   </properties>
+  </object>
+  <object id="2" gid="45" x="0" y="32" width="32" height="32"/>
+ </objectgroup>
+</map>

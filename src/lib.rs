@@ -281,7 +281,7 @@ impl Map {
                 Ok(())
             },
             "objectgroup" => |attrs| {
-                object_groups.push(ObjectGroup::new(parser, attrs, Some(layer_index))?);
+                object_groups.push(ObjectGroup::new(parser, attrs, Some(layer_index), map_path)?);
                 layer_index += 1;
                 Ok(())
             },
@@ -374,12 +374,13 @@ impl Tileset {
         attrs: Vec<OwnedAttribute>,
         map_path: Option<&Path>,
     ) -> Result<Tileset, TiledError> {
-        Tileset::new_internal(parser, &attrs).or_else(|_| Tileset::new_reference(&attrs, map_path))
+        Tileset::new_internal(parser, &attrs, map_path).or_else(|_| Tileset::new_reference(&attrs, map_path))
     }
 
     fn new_internal<R: Read>(
         parser: &mut EventReader<R>,
         attrs: &Vec<OwnedAttribute>,
+        map_path: Option<&Path>,
     ) -> Result<Tileset, TiledError> {
         let ((spacing, margin, tilecount), (first_gid, name, width, height)) = get_attrs!(
            attrs,
@@ -410,7 +411,7 @@ impl Tileset {
                 Ok(())
             },
             "tile" => |attrs| {
-                tiles.push(Tile::new(parser, attrs)?);
+                tiles.push(Tile::new(parser, attrs, map_path)?);
                 Ok(())
             },
         });
@@ -450,10 +451,10 @@ impl Tileset {
                 tileset_path
             ))
         })?;
-        Tileset::new_external(file, first_gid)
+        Tileset::new_external(file, first_gid, map_path)
     }
 
-    fn new_external<R: Read>(file: R, first_gid: u32) -> Result<Tileset, TiledError> {
+    fn new_external<R: Read>(file: R, first_gid: u32, map_path: Option<&Path>) -> Result<Tileset, TiledError> {
         let mut tileset_parser = EventReader::new(file);
         loop {
             match tileset_parser
@@ -468,6 +469,7 @@ impl Tileset {
                             first_gid,
                             &mut tileset_parser,
                             &attributes,
+                            map_path
                         );
                     }
                 }
@@ -485,6 +487,7 @@ impl Tileset {
         first_gid: u32,
         parser: &mut EventReader<R>,
         attrs: &Vec<OwnedAttribute>,
+        map_path: Option<&Path>,
     ) -> Result<Tileset, TiledError> {
         let ((spacing, margin, tilecount), (name, width, height)) = get_attrs!(
             attrs,
@@ -510,7 +513,7 @@ impl Tileset {
                 Ok(())
             },
             "tile" => |attrs| {
-                tiles.push(Tile::new(parser, attrs)?);
+                tiles.push(Tile::new(parser, attrs, map_path)?);
                 Ok(())
             },
             "properties" => |_| {
@@ -549,6 +552,7 @@ impl Tile {
     fn new<R: Read>(
         parser: &mut EventReader<R>,
         attrs: Vec<OwnedAttribute>,
+        map_path: Option<&Path>,
     ) -> Result<Tile, TiledError> {
         let ((tile_type, probability), id) = get_attrs!(
             attrs,
@@ -576,7 +580,7 @@ impl Tile {
                 Ok(())
             },
             "objectgroup" => |attrs| {
-                objectgroup = Some(ObjectGroup::new(parser, attrs, None)?);
+                objectgroup = Some(ObjectGroup::new(parser, attrs, None, map_path)?);
                 Ok(())
             },
             "animation" => |_| {
@@ -850,6 +854,7 @@ impl ObjectGroup {
         parser: &mut EventReader<R>,
         attrs: Vec<OwnedAttribute>,
         layer_index: Option<u32>,
+        map_path: Option<&Path>,
     ) -> Result<ObjectGroup, TiledError> {
         let ((o, v, c, n), ()) = get_attrs!(
             attrs,
@@ -866,7 +871,7 @@ impl ObjectGroup {
         let mut properties = HashMap::new();
         parse_tag!(parser, "objectgroup", {
             "object" => |attrs| {
-                objects.push(Object::new(parser, attrs)?);
+                objects.push(Object::new(parser, attrs, map_path)?);
                 Ok(())
             },
             "properties" => |_| {
@@ -909,14 +914,17 @@ pub struct Object {
     pub visible: bool,
     pub shape: ObjectShape,
     pub properties: Properties,
+    pub template: Option<Box<Template>>,
 }
 
 impl Object {
     fn new<R: Read>(
         parser: &mut EventReader<R>,
         attrs: Vec<OwnedAttribute>,
+        map_path: Option<&Path>,
     ) -> Result<Object, TiledError> {
-        let ((id, gid, n, t, w, h, v, r), (x, y)) = get_attrs!(
+        let template_path: Option<&str>;
+        let ((id, gid, n, t, w, h, v, r, tp, x, y), ()) = get_attrs!(
             attrs,
             optionals: [
                 ("id", id, |v:String| v.parse().ok()),
@@ -927,12 +935,12 @@ impl Object {
                 ("height", height, |v:String| v.parse().ok()),
                 ("visible", visible, |v:String| v.parse().ok().map(|x:i32| x == 1)),
                 ("rotation", rotation, |v:String| v.parse().ok()),
-            ],
-            required: [
+                ("template", template_path, |v:String| Some(v)),
                 ("x", x, |v:String| v.parse().ok()),
                 ("y", y, |v:String| v.parse().ok()),
             ],
-            TiledError::MalformedAttributes("objects must have an x and a y number".to_string())
+            required: [],
+            TiledError::MalformedAttributes("attributes of object element are malformed".to_string())
         );
         let v = v.unwrap_or(true);
         let w = w.unwrap_or(0f32);
@@ -940,10 +948,16 @@ impl Object {
         let r = r.unwrap_or(0f32);
         let id = id.unwrap_or(0u32);
         let gid = gid.unwrap_or(0u32);
+        let x = x.unwrap_or(0f32);
+        let y = y.unwrap_or(0f32);
         let n = n.unwrap_or(String::new());
         let t = t.unwrap_or(String::new());
         let mut shape = None;
         let mut properties = HashMap::new();
+        let template = match tp {
+            Some(path) => Some(Box::new(Template::new(&path, map_path)?)),
+            None => None,
+        };
 
         parse_tag!(parser, "object", {
             "ellipse" => |_| {
@@ -989,6 +1003,7 @@ impl Object {
             visible: v,
             shape: shape,
             properties: properties,
+            template: template,
         })
     }
 
@@ -1065,6 +1080,74 @@ impl Frame {
             tile_id: tile_id,
             duration: duration,
         })
+    }
+}
+
+/// A template, referenced by objects that are template instances
+#[derive(Debug, PartialEq, Clone)]
+pub struct Template {
+    pub tileset: Option<Tileset>,
+    pub object: Option<Object>,
+}
+
+impl Template {
+    fn new(source: &str, map_path: Option<&Path>) -> Result<Template, TiledError> {
+        let template_path = map_path.ok_or(TiledError::Other("Maps with external templates must know their file location.  See parse_with_path(Path).".to_string()))?.with_file_name(source);
+        let file = File::open(&template_path).map_err(|_| {
+            TiledError::Other(format!(
+                "External tileset file not found: {:?}",
+                template_path
+            ))
+        })?;
+        Template::new_external(file, Some(&template_path))
+    }
+
+    fn new_external<R: Read>(file: R, template_path: Option<&Path>) -> Result<Template, TiledError> {
+        let mut tileset_parser = EventReader::new(file);
+        loop {
+            match tileset_parser
+                .next()
+                .map_err(TiledError::XmlDecodingError)?
+            {
+                XmlEvent::StartElement {
+                    name, attributes, ..
+                } => {
+                    if name.local_name == "template" {
+                        return Template::parse_external_template(
+                            &mut tileset_parser,
+                            &attributes,
+                            template_path,
+                        );
+                    }
+                }
+                XmlEvent::EndDocument => {
+                    return Err(TiledError::PrematureEnd(
+                        "Template Document ended before map was parsed".to_string(),
+                    ))
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn parse_external_template<R: Read>(
+        parser: &mut EventReader<R>,
+        attrs: &Vec<OwnedAttribute>,
+        template_path: Option<&Path>,
+    ) -> Result<Template, TiledError> {
+        let mut tileset = None;
+        let mut object = None;
+        parse_tag!(parser, "template", {
+            "tileset" => | attrs| {
+                tileset = Some(Tileset::new(parser, attrs, template_path)?);
+                Ok(())
+            },
+            "object" => |attrs| {
+                object = Some(Object::new(parser, attrs, template_path)?);
+                Ok(())
+            },
+        });
+        Ok(Template { tileset, object })
     }
 }
 
@@ -1321,5 +1404,5 @@ pub fn parse<R: Read>(reader: R) -> Result<Map, TiledError> {
 /// map. You must pass in `first_gid`.  If you do not need to use gids for anything,
 /// passing in 1 will work fine.
 pub fn parse_tileset<R: Read>(reader: R, first_gid: u32) -> Result<Tileset, TiledError> {
-    Tileset::new_external(reader, first_gid)
+    Tileset::new_external(reader, first_gid, None)
 }
