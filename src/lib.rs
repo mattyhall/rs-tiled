@@ -315,6 +315,31 @@ impl Map {
         }
         maximum_ts
     }
+
+    /// Computes the rectangle on the image where the sprite is stored for the given tile ID.
+    /// If the ID is not found in any tileset, or if there is no image associated with the tileset, `None` is returned.
+    /// On success, returns `Some(x, y, w, h)`, where `(x, y)` is the coordinates of the top-left corner, and `(w, h)` are the width and height of the rectangle
+    pub fn get_tile_rectangle_by_id(&self, id: u32) -> Option<(u32, u32, u32, u32)> {
+        let tileset = self.get_tileset_by_gid(id)?;
+        let img = tileset.images.get(0)?; // we suppose there is only 1 image per tileset
+
+        let id = id - 1;
+        let columns =
+            (img.width as u32 - 2 * tileset.margin) / (tileset.spacing + tileset.tile_width);
+
+        // coordinates in tiles
+        let x = id % columns;
+        let y = id.div_euclid(columns);
+
+        // coordinates in pixels
+        let x = tileset.margin + (tileset.tile_width + tileset.spacing) * x;
+        let y = tileset.margin + (tileset.tile_height + tileset.spacing) * y;
+
+        let w = tileset.tile_width;
+        let h = tileset.tile_height;
+
+        Some((x, y, w, h))
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
